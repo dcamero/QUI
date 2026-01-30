@@ -2567,6 +2567,31 @@ local defaults = {
             leaveCombatColor = {1, 0.98, 0.2, 1},      -- -Combat text color (#FFFA33 yellow)
         },
 
+        -- Battle Res Counter (displays brez charges and timer)
+        brzCounter = {
+            enabled = true,
+            width = 50,
+            height = 50,
+            fontSize = 14,
+            timerFontSize = 12,
+            xOffset = 500,
+            yOffset = -50,
+            showBackdrop = true,
+            backdropColor = { 0, 0, 0, 0.6 },
+            textColor = { 1, 1, 1, 1 },
+            timerColor = { 1, 1, 1, 1 },
+            noChargesColor = { 1, 0.3, 0.3, 1 },
+            hasChargesColor = { 0.3, 1, 0.3, 1 },
+            useClassColorText = false,
+            borderSize = 1,
+            hideBorder = false,
+            borderColor = { 0, 0, 0, 1 },
+            useClassColorBorder = false,
+            borderTexture = "None",
+            useCustomFont = false,
+            font = nil,
+        },
+
         -- Combat Timer (displays elapsed combat time)
         combatTimer = {
             enabled = false,       -- Opt-in feature (disabled by default)

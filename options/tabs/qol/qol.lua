@@ -370,6 +370,220 @@ local function BuildGeneralTab(tabContent)
 
     y = y - 10
 
+    -- Battle Res Counter Section
+    GUI:SetSearchSection("Battle Res Counter")
+    local brzHeader = GUI:CreateSectionHeader(tabContent, "Battle Res Counter")
+    brzHeader:SetPoint("TOPLEFT", PADDING, y)
+    y = y - brzHeader.gap
+
+    local brzDesc = GUI:CreateLabel(tabContent,
+        "Displays battle res charges and cooldown timer in raids and M+ dungeons.",
+        11, C.textMuted)
+    brzDesc:SetPoint("TOPLEFT", PADDING, y)
+    brzDesc:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+    brzDesc:SetJustifyH("LEFT")
+    brzDesc:SetWordWrap(true)
+    brzDesc:SetHeight(15)
+    y = y - 25
+
+    local brzDB = db and db.brzCounter
+    if brzDB then
+        local brzEnableCheck = GUI:CreateFormCheckbox(tabContent, "Enable Battle Res Counter", "enabled", brzDB, function(val)
+            if _G.QUI_RefreshBrezCounter then _G.QUI_RefreshBrezCounter() end
+        end)
+        brzEnableCheck:SetPoint("TOPLEFT", PADDING, y)
+        brzEnableCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        -- Preview toggle
+        local brzPreviewState = { enabled = _G.QUI_IsBrezCounterPreviewMode and _G.QUI_IsBrezCounterPreviewMode() or false }
+        local brzPreviewCheck = GUI:CreateFormCheckbox(tabContent, "Preview Battle Res Counter", "enabled", brzPreviewState, function(val)
+            if _G.QUI_ToggleBrezCounterPreview then
+                _G.QUI_ToggleBrezCounterPreview(val)
+            end
+        end)
+        brzPreviewCheck:SetPoint("TOPLEFT", PADDING, y)
+        brzPreviewCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        -- Frame size settings
+        local brzWidthSlider = GUI:CreateFormSlider(tabContent, "Frame Width", 30, 100, 1, "width", brzDB, function()
+            if _G.QUI_RefreshBrezCounter then _G.QUI_RefreshBrezCounter() end
+        end)
+        brzWidthSlider:SetPoint("TOPLEFT", PADDING, y)
+        brzWidthSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local brzHeightSlider = GUI:CreateFormSlider(tabContent, "Frame Height", 30, 100, 1, "height", brzDB, function()
+            if _G.QUI_RefreshBrezCounter then _G.QUI_RefreshBrezCounter() end
+        end)
+        brzHeightSlider:SetPoint("TOPLEFT", PADDING, y)
+        brzHeightSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local brzFontSizeSlider = GUI:CreateFormSlider(tabContent, "Charges Font Size", 10, 28, 1, "fontSize", brzDB, function()
+            if _G.QUI_RefreshBrezCounter then _G.QUI_RefreshBrezCounter() end
+        end)
+        brzFontSizeSlider:SetPoint("TOPLEFT", PADDING, y)
+        brzFontSizeSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local brzTimerFontSlider = GUI:CreateFormSlider(tabContent, "Timer Font Size", 8, 24, 1, "timerFontSize", brzDB, function()
+            if _G.QUI_RefreshBrezCounter then _G.QUI_RefreshBrezCounter() end
+        end)
+        brzTimerFontSlider:SetPoint("TOPLEFT", PADDING, y)
+        brzTimerFontSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local brzXOffsetSlider = GUI:CreateFormSlider(tabContent, "X Position Offset", -2000, 2000, 1, "xOffset", brzDB, function()
+            if _G.QUI_RefreshBrezCounter then _G.QUI_RefreshBrezCounter() end
+        end)
+        brzXOffsetSlider:SetPoint("TOPLEFT", PADDING, y)
+        brzXOffsetSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local brzYOffsetSlider = GUI:CreateFormSlider(tabContent, "Y Position Offset", -2000, 2000, 1, "yOffset", brzDB, function()
+            if _G.QUI_RefreshBrezCounter then _G.QUI_RefreshBrezCounter() end
+        end)
+        brzYOffsetSlider:SetPoint("TOPLEFT", PADDING, y)
+        brzYOffsetSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        -- Color pickers
+        local brzHasChargesColor = GUI:CreateFormColorPicker(tabContent, "Charges Available Color", "hasChargesColor", brzDB, function()
+            if _G.QUI_RefreshBrezCounter then _G.QUI_RefreshBrezCounter() end
+        end)
+        brzHasChargesColor:SetPoint("TOPLEFT", PADDING, y)
+        brzHasChargesColor:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local brzNoChargesColor = GUI:CreateFormColorPicker(tabContent, "No Charges Color", "noChargesColor", brzDB, function()
+            if _G.QUI_RefreshBrezCounter then _G.QUI_RefreshBrezCounter() end
+        end)
+        brzNoChargesColor:SetPoint("TOPLEFT", PADDING, y)
+        brzNoChargesColor:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        -- Timer text color with class color toggle
+        local brzTimerColorPicker  -- Forward declare
+
+        local brzUseClassColorCheck = GUI:CreateFormCheckbox(tabContent, "Use Class Color for Timer Text", "useClassColorText", brzDB, function(val)
+            if _G.QUI_RefreshBrezCounter then _G.QUI_RefreshBrezCounter() end
+            if brzTimerColorPicker and brzTimerColorPicker.SetEnabled then
+                brzTimerColorPicker:SetEnabled(not val)
+            end
+        end)
+        brzUseClassColorCheck:SetPoint("TOPLEFT", PADDING, y)
+        brzUseClassColorCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        brzTimerColorPicker = GUI:CreateFormColorPicker(tabContent, "Timer Text Color", "timerColor", brzDB, function()
+            if _G.QUI_RefreshBrezCounter then _G.QUI_RefreshBrezCounter() end
+        end)
+        brzTimerColorPicker:SetPoint("TOPLEFT", PADDING, y)
+        brzTimerColorPicker:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        if brzTimerColorPicker.SetEnabled then
+            brzTimerColorPicker:SetEnabled(not brzDB.useClassColorText)
+        end
+        y = y - FORM_ROW
+
+        -- Font selection with custom toggle
+        local brzFontList = Shared.GetFontList()
+        local brzFontDropdown  -- Forward declare
+
+        local brzUseCustomFontCheck = GUI:CreateFormCheckbox(tabContent, "Use Custom Font", "useCustomFont", brzDB, function(val)
+            if _G.QUI_RefreshBrezCounter then _G.QUI_RefreshBrezCounter() end
+            if brzFontDropdown and brzFontDropdown.SetEnabled then
+                brzFontDropdown:SetEnabled(val)
+            end
+        end)
+        brzUseCustomFontCheck:SetPoint("TOPLEFT", PADDING, y)
+        brzUseCustomFontCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        brzFontDropdown = GUI:CreateFormDropdown(tabContent, "Font", brzFontList, "font", brzDB, function()
+            if _G.QUI_RefreshBrezCounter then _G.QUI_RefreshBrezCounter() end
+        end)
+        brzFontDropdown:SetPoint("TOPLEFT", PADDING, y)
+        brzFontDropdown:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        if brzFontDropdown.SetEnabled then
+            brzFontDropdown:SetEnabled(brzDB.useCustomFont == true)
+        end
+        y = y - FORM_ROW
+
+        -- Backdrop settings
+        local brzBackdropCheck = GUI:CreateFormCheckbox(tabContent, "Show Backdrop", "showBackdrop", brzDB, function(val)
+            if _G.QUI_RefreshBrezCounter then _G.QUI_RefreshBrezCounter() end
+        end)
+        brzBackdropCheck:SetPoint("TOPLEFT", PADDING, y)
+        brzBackdropCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local brzBackdropColor = GUI:CreateFormColorPicker(tabContent, "Backdrop Color", "backdropColor", brzDB, function()
+            if _G.QUI_RefreshBrezCounter then _G.QUI_RefreshBrezCounter() end
+        end)
+        brzBackdropColor:SetPoint("TOPLEFT", PADDING, y)
+        brzBackdropColor:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        -- Border settings
+        local brzBorderSizeSlider, brzBorderTextureDropdown, brzUseClassBorderCheck, brzBorderColorPicker
+
+        local function UpdateBrzBorderControlsEnabled(enabled)
+            if brzBorderSizeSlider and brzBorderSizeSlider.SetEnabled then brzBorderSizeSlider:SetEnabled(enabled) end
+            if brzBorderTextureDropdown and brzBorderTextureDropdown.SetEnabled then brzBorderTextureDropdown:SetEnabled(enabled) end
+            if brzUseClassBorderCheck and brzUseClassBorderCheck.SetEnabled then brzUseClassBorderCheck:SetEnabled(enabled) end
+            if brzBorderColorPicker and brzBorderColorPicker.SetEnabled then
+                brzBorderColorPicker:SetEnabled(enabled and not brzDB.useClassColorBorder)
+            end
+        end
+
+        local brzHideBorderCheck = GUI:CreateFormCheckbox(tabContent, "Hide Border", "hideBorder", brzDB, function(val)
+            if _G.QUI_RefreshBrezCounter then _G.QUI_RefreshBrezCounter() end
+            UpdateBrzBorderControlsEnabled(not val)
+        end)
+        brzHideBorderCheck:SetPoint("TOPLEFT", PADDING, y)
+        brzHideBorderCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        brzBorderSizeSlider = GUI:CreateFormSlider(tabContent, "Border Size", 1, 5, 0.5, "borderSize", brzDB, function()
+            if _G.QUI_RefreshBrezCounter then _G.QUI_RefreshBrezCounter() end
+        end)
+        brzBorderSizeSlider:SetPoint("TOPLEFT", PADDING, y)
+        brzBorderSizeSlider:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        local brzBorderList = Shared.GetBorderList()
+        brzBorderTextureDropdown = GUI:CreateFormDropdown(tabContent, "Border Texture", brzBorderList, "borderTexture", brzDB, function()
+            if _G.QUI_RefreshBrezCounter then _G.QUI_RefreshBrezCounter() end
+        end)
+        brzBorderTextureDropdown:SetPoint("TOPLEFT", PADDING, y)
+        brzBorderTextureDropdown:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        brzUseClassBorderCheck = GUI:CreateFormCheckbox(tabContent, "Use Class Color for Border", "useClassColorBorder", brzDB, function(val)
+            if _G.QUI_RefreshBrezCounter then _G.QUI_RefreshBrezCounter() end
+            if brzBorderColorPicker and brzBorderColorPicker.SetEnabled then
+                brzBorderColorPicker:SetEnabled(not val and not brzDB.hideBorder)
+            end
+        end)
+        brzUseClassBorderCheck:SetPoint("TOPLEFT", PADDING, y)
+        brzUseClassBorderCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        brzBorderColorPicker = GUI:CreateFormColorPicker(tabContent, "Border Color", "borderColor", brzDB, function()
+            if _G.QUI_RefreshBrezCounter then _G.QUI_RefreshBrezCounter() end
+        end)
+        brzBorderColorPicker:SetPoint("TOPLEFT", PADDING, y)
+        brzBorderColorPicker:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
+        y = y - FORM_ROW
+
+        -- Apply initial border control states
+        UpdateBrzBorderControlsEnabled(not brzDB.hideBorder)
+    end
+
+    y = y - 10
+
     -- Combat Timer Section
     local combatTimerHeader = GUI:CreateSectionHeader(tabContent, "Combat Timer")
     combatTimerHeader:SetPoint("TOPLEFT", PADDING, y)

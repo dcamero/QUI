@@ -4,4 +4,5 @@
     <Script file="mplus_timer.lua"/>
     <Script file="teleport.lua"/>
     <Script file="party_keystones.lua"/>
+    <Script file="brez_counter.lua"/>
 </Ui>
