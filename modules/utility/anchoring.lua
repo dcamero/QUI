@@ -981,13 +981,31 @@ end
 -- GLOBAL CALLBACKS (for backward compatibility)
 ---------------------------------------------------------------------------
 -- Global callback for updating anchored frames (called by NCDM, resource bars, etc.)
-_G.QUI_UpdateAnchoredFrames = function()
+-- Preserve any existing unit-frame updater to avoid breaking legacy anchoring.
+local previousUpdateAnchoredFrames = _G.QUI_UpdateAnchoredFrames
+local previousUpdateAnchoredUnitFrames = _G.QUI_UpdateAnchoredUnitFrames
+local previousUpdateCDMAnchoredUnitFrames = _G.QUI_UpdateCDMAnchoredUnitFrames
+
+_G.QUI_UpdateAnchoredFrames = function(...)
     if QUI_Anchoring then
         QUI_Anchoring:UpdateAllAnchoredFrames()
     end
+    if previousUpdateAnchoredFrames and previousUpdateAnchoredFrames ~= _G.QUI_UpdateAnchoredFrames then
+        previousUpdateAnchoredFrames(...)
+    end
 end
 
--- Backward compatibility alias
-_G.QUI_UpdateAnchoredUnitFrames = _G.QUI_UpdateAnchoredFrames
-_G.QUI_UpdateCDMAnchoredUnitFrames = _G.QUI_UpdateAnchoredFrames
+-- Backward compatibility aliases that also honor any pre-existing unit-frame updater
+_G.QUI_UpdateAnchoredUnitFrames = function(...)
+    if previousUpdateAnchoredUnitFrames and previousUpdateAnchoredUnitFrames ~= _G.QUI_UpdateAnchoredUnitFrames and previousUpdateAnchoredUnitFrames ~= previousUpdateAnchoredFrames then
+        previousUpdateAnchoredUnitFrames(...)
+    end
+    _G.QUI_UpdateAnchoredFrames(...)
+end
 
+_G.QUI_UpdateCDMAnchoredUnitFrames = function(...)
+    if previousUpdateCDMAnchoredUnitFrames and previousUpdateCDMAnchoredUnitFrames ~= _G.QUI_UpdateCDMAnchoredUnitFrames and previousUpdateCDMAnchoredUnitFrames ~= previousUpdateAnchoredFrames then
+        previousUpdateCDMAnchoredUnitFrames(...)
+    end
+    _G.QUI_UpdateAnchoredFrames(...)
+end
