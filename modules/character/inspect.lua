@@ -154,7 +154,8 @@ local function IsMainHand2H(unit)
     local itemLink = GetInventoryItemLink(unit, INVSLOT_MAINHAND)
     if not itemLink then return false end
 
-    local _, _, _, _, _, _, _, _, equipSlot = C_Item.GetItemInfo(itemLink)
+    local ok, _, _, _, _, _, _, _, _, equipSlot = pcall(C_Item.GetItemInfo, itemLink)
+    if not ok then return false end
     return equipSlot == "INVTYPE_2HWEAPON"
 end
 
@@ -580,22 +581,22 @@ end
 
 -- Slot ID mapping for lite mode (slot name to slot ID)
 local LITE_SLOT_IDS = {
-    InspectHeadSlot = 1,
-    InspectNeckSlot = 2,
-    InspectShoulderSlot = 3,
-    InspectBackSlot = 15,
-    InspectChestSlot = 5,
-    InspectWristSlot = 9,
-    InspectHandsSlot = 10,
-    InspectWaistSlot = 6,
-    InspectLegsSlot = 7,
-    InspectFeetSlot = 8,
-    InspectFinger0Slot = 11,
-    InspectFinger1Slot = 12,
-    InspectTrinket0Slot = 13,
-    InspectTrinket1Slot = 14,
-    InspectMainHandSlot = 16,
-    InspectSecondaryHandSlot = 17,
+    InspectHeadSlot = INVSLOT_HEAD,
+    InspectNeckSlot = INVSLOT_NECK,
+    InspectShoulderSlot = INVSLOT_SHOULDER,
+    InspectBackSlot = INVSLOT_BACK,
+    InspectChestSlot = INVSLOT_CHEST,
+    InspectWristSlot = INVSLOT_WRIST,
+    InspectHandsSlot = INVSLOT_HAND,
+    InspectWaistSlot = INVSLOT_WAIST,
+    InspectLegsSlot = INVSLOT_LEGS,
+    InspectFeetSlot = INVSLOT_FEET,
+    InspectFinger0Slot = INVSLOT_FINGER1,
+    InspectFinger1Slot = INVSLOT_FINGER2,
+    InspectTrinket0Slot = INVSLOT_TRINKET1,
+    InspectTrinket1Slot = INVSLOT_TRINKET2,
+    InspectMainHandSlot = INVSLOT_MAINHAND,
+    InspectSecondaryHandSlot = INVSLOT_OFFHAND,
 }
 
 -- Create centered FontString on slot for lite mode
@@ -655,7 +656,7 @@ local function CreateLiteOverallDisplay()
 end
 
 -- Update single slot's lite text
-local function UpdateLiteSlotText(slotName, unit)
+local function UpdateLiteSlotText(slotName, unit, settings, cachedFont)
     local slotFrame = _G[slotName]
     if not slotFrame then return end
 
@@ -670,11 +671,14 @@ local function UpdateLiteSlotText(slotName, unit)
     local text = liteOverlays[slotName]
     if not text then return end
 
-    local settings = GetSettings()
+    -- Use cached settings/font if provided, otherwise fetch
+    settings = settings or GetSettings()
+    local font = cachedFont or (function()
+        local shared = GetShared()
+        return shared.GetGlobalFont and shared.GetGlobalFont() or "Fonts\\FRIZQT__.TTF"
+    end)()
 
     -- Update font size in case it changed
-    local shared = GetShared()
-    local font = shared.GetGlobalFont and shared.GetGlobalFont() or "Fonts\\FRIZQT__.TTF"
     local fontSize = settings.inspectLiteFontSize or 15
     text:SetFont(font, fontSize, "OUTLINE")
 
@@ -716,15 +720,18 @@ local function UpdateLiteSlotText(slotName, unit)
 end
 
 -- Update overall iLvL display
-local function UpdateLiteOverallDisplay(unit)
+local function UpdateLiteOverallDisplay(unit, settings, cachedFont)
     local frame = liteOverallDisplay or CreateLiteOverallDisplay()
     if not frame then return end
 
-    local settings = GetSettings()
+    -- Use cached settings/font if provided, otherwise fetch
+    settings = settings or GetSettings()
+    local font = cachedFont or (function()
+        local shared = GetShared()
+        return shared.GetGlobalFont and shared.GetGlobalFont() or "Fonts\\FRIZQT__.TTF"
+    end)()
 
     -- Update font sizes in case they changed
-    local shared = GetShared()
-    local font = shared.GetGlobalFont and shared.GetGlobalFont() or "Fonts\\FRIZQT__.TTF"
     local fontSize = settings.inspectLiteOverallFontSize or 11
     if frame.label then
         frame.label:SetFont(font, fontSize, "OUTLINE")
@@ -763,17 +770,28 @@ local function UpdateLiteOverallDisplay(unit)
 end
 
 -- Master update for all lite displays
+-- Per-slot and overall displays are independent - each checks its own toggle
 local function UpdateAllLiteDisplays(unit)
     local settings = GetSettings()
-    if not settings.inspectLiteMode then return end
 
-    -- Update per-slot displays
-    for _, slotName in ipairs(INSPECT_SLOT_NAMES) do
-        UpdateLiteSlotText(slotName, unit)
+    -- Cache font lookup once for all updates
+    local shared = GetShared()
+    local cachedFont = shared.GetGlobalFont and shared.GetGlobalFont() or "Fonts\\FRIZQT__.TTF"
+
+    -- Update per-slot displays (controlled by inspectLiteShowPerSlot, checked inside UpdateLiteSlotText)
+    if settings.inspectLiteShowPerSlot then
+        for _, slotName in ipairs(INSPECT_SLOT_NAMES) do
+            UpdateLiteSlotText(slotName, unit, settings, cachedFont)
+        end
+    else
+        -- Hide per-slot overlays if disabled
+        for slotName, text in pairs(liteOverlays) do
+            if text then text:Hide() end
+        end
     end
 
-    -- Update overall display
-    UpdateLiteOverallDisplay(unit)
+    -- Update overall display (controlled by inspectLiteShowOverall, checked inside UpdateLiteOverallDisplay)
+    UpdateLiteOverallDisplay(unit, settings, cachedFont)
 end
 
 -- Hide all lite displays
@@ -810,14 +828,18 @@ end
 local function RefreshInspectDisplayMode()
     local settings = GetSettings()
 
-    if settings.inspectLiteMode then
-        -- Lite mode: hide detailed overlays, show lite displays
+    if settings.inspectEnabled then
+        -- Full overlay mode: always use detailed overlays
+        HideLiteDisplays()
+        ShowDetailedOverlays()
+    elseif settings.inspectLiteShowPerSlot or settings.inspectLiteShowOverall then
+        -- Lite mode (only when full overlays disabled): show enabled lite displays
         HideDetailedOverlays()
         UpdateAllLiteDisplays("target")
     else
-        -- Detailed mode: hide lite displays, show detailed overlays
+        -- Both disabled: hide everything
         HideLiteDisplays()
-        ShowDetailedOverlays()
+        HideDetailedOverlays()
     end
 end
 
@@ -1415,16 +1437,20 @@ local function UpdateInspectFrame()
     local settings = GetSettings()
     local shared = GetShared()
 
-    if settings.inspectLiteMode then
-        -- Lite mode: hide detailed overlays and show lite displays
-        HideDetailedOverlays()
-        UpdateAllLiteDisplays("target")
-    else
-        -- Detailed mode: hide lite displays and show detailed overlays
+    if settings.inspectEnabled then
+        -- Full overlay mode: always use detailed overlays, never lite mode
         HideLiteDisplays()
         if shared.UpdateAllSlotOverlays then
             shared.UpdateAllSlotOverlays("target", inspectOverlays)
         end
+    elseif settings.inspectLiteShowPerSlot or settings.inspectLiteShowOverall then
+        -- Lite mode (only when full overlays disabled): show enabled lite displays
+        HideDetailedOverlays()
+        UpdateAllLiteDisplays("target")
+    else
+        -- All disabled: hide everything
+        HideLiteDisplays()
+        HideDetailedOverlays()
     end
 
     -- Update header display (name, ilvl, spec)
@@ -1441,14 +1467,21 @@ local function HookInspectFrame()
     if not InspectFrame then return end
 
     local settings = GetSettings()
-    if settings.inspectEnabled == false then return end
+    -- Skip if full overlays are disabled AND no lite features are enabled
+    local hasLiteFeature = settings.inspectLiteShowPerSlot or settings.inspectLiteShowOverall
+    if settings.inspectEnabled == false and not hasLiteFeature then return end
 
     local shared = GetShared()
 
     InspectFrame:HookScript("OnShow", function()
+        local currentSettings = GetSettings()
         currentInspectTab = 1
-        ApplyInspectPaneLayout()
-        InitializeInspectOverlays()
+
+        -- Only apply full layout/overlays when full overlay mode is enabled
+        if currentSettings.inspectEnabled then
+            ApplyInspectPaneLayout()
+            InitializeInspectOverlays()
+        end
 
         C_Timer.After(0.1, function()
             local unit = InspectFrame.unit or "target"
