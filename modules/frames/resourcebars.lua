@@ -188,6 +188,28 @@ local druidSpecResource = {
     [4] = Enum.PowerType.Mana,         -- Restoration
 }
 
+-- Specs where the secondary resource is more gameplay-relevant than the primary
+-- Used for "Swap Secondary to Primary Position" feature
+local SwapCandidateSpecs = {
+    [66]   = true,  -- Paladin: Protection
+    [70]   = true,  -- Paladin: Retribution
+    [263]  = true,  -- Shaman: Enhancement
+    [265]  = true,  -- Warlock: Affliction
+    [266]  = true,  -- Warlock: Demonology
+    [267]  = true,  -- Warlock: Destruction
+    [1467] = true,  -- Evoker: Devastation
+    [1473] = true,  -- Evoker: Augmentation
+}
+
+local function ShouldSwapBars()
+    local cfg = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.secondaryPowerBar
+    if not cfg or not cfg.swapToPrimaryPosition then return false end
+    local spec = GetSpecialization()
+    if not spec then return false end
+    local specID = GetSpecializationInfo(spec)
+    return specID and SwapCandidateSpecs[specID] or false
+end
+
 -- RESOURCE DETECTION
 
 local function GetPrimaryResource()
@@ -939,6 +961,15 @@ function QUICore:UpdatePowerBar()
         return
     end
 
+    -- Auto-hide primary when secondary is swapped to primary position
+    if ShouldSwapBars() and self.db.profile.secondaryPowerBar.hidePrimaryOnSwap then
+        if self.powerBar then
+            self.powerBar:SetAlpha(0)
+            self.powerBar:Show()  -- Keep shown at alpha 0 so anchored frames retain reference
+        end
+        return
+    end
+
     local bar = self:GetPowerBar()
     local resource = GetPrimaryResource()
 
@@ -997,18 +1028,50 @@ function QUICore:UpdatePowerBar()
             width = 200 -- absolute fallback
         end
     end
-    
+
     -- Calculate desired position and size (pixel-snapped for crisp borders)
     local offsetX, offsetY
-    offsetX = QUICore:PixelRound(cfg.offsetX or 0, bar)
-    offsetY = QUICore:PixelRound(cfg.offsetY or 0, bar)
+    local isSwapped = ShouldSwapBars()
+    if isSwapped then
+        -- Swap: move primary bar to where the secondary bar would normally be
+        local secCfg = self.db.profile.secondaryPowerBar
+        if secCfg.lockedToPrimary then
+            -- Secondary is normally locked above primary — compute that position from config values
+            local primaryHeight = cfg.height or 8
+            local primaryBorderSize = cfg.borderSize or 1
+            local secondaryHeight = secCfg.height or 8
+            local secondaryBorderSize = secCfg.borderSize or 1
+            local baseCenterX = cfg.offsetX or 0
+            local baseCenterY = cfg.offsetY or 25
+
+            -- Mirror the locked-to-primary "above" calculation using config offsets
+            local primaryVisualTop = baseCenterY + (primaryHeight / 2) + primaryBorderSize
+            local aboveCenterY = primaryVisualTop + (secondaryHeight / 2) + secondaryBorderSize - 1
+
+            offsetX = QUICore:PixelRound(baseCenterX + (secCfg.offsetX or 0), bar)
+            offsetY = QUICore:PixelRound(aboveCenterY + (secCfg.offsetY or 0), bar)
+        else
+            -- Secondary has its own standalone position — use it directly
+            offsetX = QUICore:PixelRound(secCfg.offsetX or 0, bar)
+            offsetY = QUICore:PixelRound(secCfg.offsetY or 0, bar)
+            local secWidth = secCfg.width
+            if secWidth and secWidth > 0 then
+                width = secWidth
+            end
+        end
+    else
+        offsetX = QUICore:PixelRound(cfg.offsetX or 0, bar)
+        offsetY = QUICore:PixelRound(cfg.offsetY or 0, bar)
+    end
 
     -- Only reposition when offset actually changed (prevents flicker)
-    if bar._cachedX ~= offsetX or bar._cachedY ~= offsetY then
+    local swapMode = isSwapped and "swappedToSecondary" or nil
+    if bar._cachedX ~= offsetX or bar._cachedY ~= offsetY or bar._cachedAutoMode ~= swapMode then
         bar:ClearAllPoints()
         bar:SetPoint("CENTER", UIParent, "CENTER", offsetX, offsetY)
         bar._cachedX = offsetX
         bar._cachedY = offsetY
+        bar._cachedAutoMode = swapMode
         -- Notify unit frames that may be anchored to this power bar
         if _G.QUI_UpdateAnchoredUnitFrames then
             _G.QUI_UpdateAnchoredUnitFrames()
@@ -2068,12 +2131,41 @@ function QUICore:UpdateSecondaryPowerBar()
     bar.StatusBar:SetOrientation(isVertical and "VERTICAL" or "HORIZONTAL")
 
     -- =====================================================
-    -- LOCKED TO PRIMARY MODE (highest priority positioning)
+    -- SWAP TO PRIMARY POSITION (highest priority positioning)
     -- =====================================================
     local width
     local lockedToPrimaryHandled = false
 
-    if cfg.lockedToPrimary then
+    if cfg.swapToPrimaryPosition and ShouldSwapBars() then
+        -- Position secondary bar at primary bar's configured position with primary bar's width
+        local primaryCfg = self.db.profile.powerBar
+        if primaryCfg then
+            local offsetX = QUICore:PixelRound(primaryCfg.offsetX or 0, bar)
+            local offsetY = QUICore:PixelRound(primaryCfg.offsetY or 25, bar)
+
+            if bar._cachedX ~= offsetX or bar._cachedY ~= offsetY or bar._cachedAutoMode ~= "swappedToPrimary" then
+                bar:ClearAllPoints()
+                bar:SetPoint("CENTER", UIParent, "CENTER", offsetX, offsetY)
+                bar._cachedX = offsetX
+                bar._cachedY = offsetY
+                bar._cachedAnchor = nil
+                bar._cachedAutoMode = "swappedToPrimary"
+                if _G.QUI_UpdateAnchoredUnitFrames then
+                    _G.QUI_UpdateAnchoredUnitFrames()
+                end
+            end
+
+            -- Use primary bar's width
+            width = primaryCfg.width
+            if not width or width <= 0 then width = 326 end
+            lockedToPrimaryHandled = true
+        end
+    end
+
+    -- =====================================================
+    -- LOCKED TO PRIMARY MODE
+    -- =====================================================
+    if not lockedToPrimaryHandled and cfg.lockedToPrimary then
         local primaryBar = self.powerBar
         local primaryCfg = self.db.profile.powerBar
 

@@ -1900,6 +1900,35 @@ local function CreateCDMSetupPage(parent)
         enableSecondary:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         y = y - FORM_ROW
 
+        -- Swap secondary to primary position
+        local swapToggle = GUI:CreateFormToggle(tabContent, "Swap Secondary to Primary Position", "swapToPrimaryPosition", secondary, RefreshPowerBars)
+        swapToggle:SetPoint("TOPLEFT", PAD, y)
+        swapToggle:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local swapDesc = GUI:CreateLabel(tabContent,
+            "|cFF33937FDevastation|r, |cFF33937FAugmentation|r, "
+            .. "|cFFF48CBAProtection|r, |cFFF48CBARetribution|r, "
+            .. "|cFF8788EEAffliction|r, |cFF8788EEDemonology|r, |cFF8788EEDestruction|r "
+            .. "& |cFF0070DDEnhancement|r Support Only.",
+            11, C.textMuted)
+        swapDesc:SetPoint("TOPLEFT", PAD, y)
+        swapDesc:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        swapDesc:SetJustifyH("LEFT")
+        y = y - 25
+
+        -- Auto-hide primary when swapped
+        local hideOnSwapToggle = GUI:CreateFormToggle(tabContent, "Auto-Hide Primary Bar When Swapped", "hidePrimaryOnSwap", secondary, RefreshPowerBars)
+        hideOnSwapToggle:SetPoint("TOPLEFT", PAD, y)
+        hideOnSwapToggle:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        y = y - FORM_ROW
+
+        local hideOnSwapDesc = GUI:CreateLabel(tabContent, "Automatically hides the Primary resource bar when the Secondary bar is swapped to its position.", 11, C.textMuted)
+        hideOnSwapDesc:SetPoint("TOPLEFT", PAD, y)
+        hideOnSwapDesc:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        hideOnSwapDesc:SetJustifyH("LEFT")
+        y = y - 25
+
         -- Visibility mode dropdowns
         local visibilityOptions = {
             {value = "always",  text = "Always"},
@@ -3464,6 +3493,8 @@ local function CreateCDMSetupPage(parent)
         if secondary.borderSize == nil then secondary.borderSize = 1 end
         if secondary.orientation == nil then secondary.orientation = "AUTO" end
         if secondary.snapGap == nil then secondary.snapGap = 5 end
+        if secondary.swapToPrimaryPosition == nil then secondary.swapToPrimaryPosition = false end
+        if secondary.hidePrimaryOnSwap == nil then secondary.hidePrimaryOnSwap = false end
 
         -- Callback to refresh power bars
         local function RefreshPowerBars()
