@@ -18,6 +18,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+## v2.29.3 - 2026-02-09
+
+### Added
+- added separate setting to hide info messages (so you can hide errors, but still have quest prog messages)
 ## v2.29.2 - 2026-02-09
 
 ### Changed
