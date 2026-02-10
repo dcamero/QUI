@@ -14,12 +14,11 @@ local function Scale(x, frame)
     return x
 end
 
--- Check if CDM visibility says we should be hidden (e.g. hideWhenMounted)
+-- Check if CDM visibility says we should be hidden
 local function IsCDMVisibilityHidden()
-    if not QUICore or not QUICore.db or not QUICore.db.profile then return false end
-    local vis = QUICore.db.profile.cdmVisibility
-    if not vis then return false end
-    if vis.hideWhenMounted and (IsMounted() or GetShapeshiftFormID() == 27) then return true end
+    if _G.QUI_ShouldCDMBeVisible then
+        return not _G.QUI_ShouldCDMBeVisible()
+    end
     return false
 end
 
@@ -101,6 +100,9 @@ end
 
 --TABLES
 
+-- Custom power type ID for Enhancement Shaman Maelstrom Weapon (aura-based, not a Blizzard PowerType)
+Enum.PowerType.MaelstromWeapon = 100
+
 local tocVersion = select(4, GetBuildInfo())
 local HAS_UNIT_POWER_PERCENT = type(UnitPowerPercent) == "function"
 
@@ -138,6 +140,7 @@ local tickedPowerTypes = {
     [Enum.PowerType.HolyPower] = true,
     [Enum.PowerType.Runes] = true,
     [Enum.PowerType.SoulShards] = true,
+    [Enum.PowerType.MaelstromWeapon] = true,
 }
 
 local fragmentedPowerTypes = {
@@ -163,6 +166,7 @@ local instantFeedbackTypes = {
     [Enum.PowerType.ArcaneCharges] = true,
     [Enum.PowerType.Essence] = true,
     [Enum.PowerType.SoulShards] = true,
+    [Enum.PowerType.MaelstromWeapon] = true,
 }
 
 -- Druid utility forms (show spec resource instead of form resource)
@@ -183,6 +187,41 @@ local druidSpecResource = {
     [3] = Enum.PowerType.Rage,         -- Guardian
     [4] = Enum.PowerType.Mana,         -- Restoration
 }
+
+-- Spec info for the "Swap Secondary to Primary Position" feature
+-- Used by both runtime checks and the options UI (via namespace export)
+local SwapCandidateSpecs = {
+    { specID = 1467, name = "Devastation",  classColor = "33937F" },  -- Evoker
+    { specID = 1473, name = "Augmentation", classColor = "33937F" },  -- Evoker
+    { specID = 66,   name = "Protection",   classColor = "F48CBA" },  -- Paladin
+    { specID = 70,   name = "Retribution",  classColor = "F48CBA" },  -- Paladin
+    { specID = 265,  name = "Affliction",   classColor = "8788EE" },  -- Warlock
+    { specID = 266,  name = "Demonology",   classColor = "8788EE" },  -- Warlock
+    { specID = 267,  name = "Destruction",  classColor = "8788EE" },  -- Warlock
+    { specID = 263,  name = "Enhancement",  classColor = "0070DD" },  -- Shaman
+}
+ns.SwapCandidateSpecs = SwapCandidateSpecs
+
+local function ShouldSwapBars()
+    local cfg = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.secondaryPowerBar
+    if not cfg or not cfg.swapToPrimaryPosition then return false end
+    local spec = GetSpecialization()
+    if not spec then return false end
+    local specID = GetSpecializationInfo(spec)
+    return specID and cfg.swapSpecs and cfg.swapSpecs[specID] or false
+end
+
+local function ShouldHidePrimaryOnSwap()
+    local cfg = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.secondaryPowerBar
+    if not cfg or not cfg.swapToPrimaryPosition or not cfg.hidePrimaryOnSwap then return false end
+    local spec = GetSpecialization()
+    if not spec then return false end
+    local specID = GetSpecializationInfo(spec)
+    if not specID then return false end
+    local swapEnabled = cfg.swapSpecs and cfg.swapSpecs[specID]
+    local hideEnabled = cfg.hideSpecs and cfg.hideSpecs[specID]
+    return (swapEnabled and hideEnabled) or false
+end
 
 -- RESOURCE DETECTION
 
@@ -275,6 +314,7 @@ local function GetSecondaryResource()
         ["ROGUE"]       = Enum.PowerType.ComboPoints,
         ["SHAMAN"]      = {
             [262]  = Enum.PowerType.Mana, -- Elemental
+            [263]  = Enum.PowerType.MaelstromWeapon,  -- Enhancement (aura stacks via C_UnitAuras)
         },
         ["WARLOCK"]     = Enum.PowerType.SoulShards,
         ["WARRIOR"]     = nil,
@@ -369,6 +409,8 @@ local function GetResourceColor(resource)
             customColor = pc.fury
         elseif resource == Enum.PowerType.Maelstrom then
             customColor = pc.maelstrom
+        elseif resource == Enum.PowerType.MaelstromWeapon then
+            customColor = pc.maelstromWeapon or pc.maelstrom
         elseif resource == Enum.PowerType.LunarPower then
             customColor = pc.lunarPower
         elseif resource == Enum.PowerType.HolyPower then
@@ -471,7 +513,7 @@ local function GetSecondaryResourceValue(resource)
         -- DH souls – get from default Blizzard bar
         local soulBar = _G["DemonHunterSoulFragmentsBar"]
         if not soulBar then return nil, nil, nil, nil end
-        
+
         -- Ensure the bar is shown (even if PlayerFrame is hidden)
         if not soulBar:IsShown() then
             soulBar:Show()
@@ -482,6 +524,13 @@ local function GetSecondaryResourceValue(resource)
         local _, max = soulBar:GetMinMaxValues()
 
         return max, current, current, "number"
+    end
+
+    if resource == Enum.PowerType.MaelstromWeapon then
+        -- Enhancement Shaman Maelstrom Weapon stacks (aura-based, spell ID 344179)
+        local aura = C_UnitAuras.GetPlayerAuraBySpellID(344179)
+        local current = aura and aura.applications or 0
+        return 10, current, current, "number"
     end
 
     if resource == Enum.PowerType.Runes then
@@ -925,6 +974,15 @@ function QUICore:UpdatePowerBar()
         return
     end
 
+    -- Auto-hide primary when secondary is swapped to primary position (per-spec)
+    if ShouldHidePrimaryOnSwap() then
+        if self.powerBar then
+            self.powerBar:SetAlpha(0)
+            self.powerBar:Show()  -- Keep shown at alpha 0 so anchored frames retain reference
+        end
+        return
+    end
+
     local bar = self:GetPowerBar()
     local resource = GetPrimaryResource()
 
@@ -983,18 +1041,50 @@ function QUICore:UpdatePowerBar()
             width = 200 -- absolute fallback
         end
     end
-    
+
     -- Calculate desired position and size (pixel-snapped for crisp borders)
     local offsetX, offsetY
-    offsetX = QUICore:PixelRound(cfg.offsetX or 0, bar)
-    offsetY = QUICore:PixelRound(cfg.offsetY or 0, bar)
+    local isSwapped = ShouldSwapBars()
+    if isSwapped then
+        -- Swap: move primary bar to where the secondary bar would normally be
+        local secCfg = self.db.profile.secondaryPowerBar
+        if secCfg.lockedToPrimary then
+            -- Secondary is normally locked above primary — compute that position from config values
+            local primaryHeight = cfg.height or 8
+            local primaryBorderSize = cfg.borderSize or 1
+            local secondaryHeight = secCfg.height or 8
+            local secondaryBorderSize = secCfg.borderSize or 1
+            local baseCenterX = cfg.offsetX or 0
+            local baseCenterY = cfg.offsetY or 25
+
+            -- Mirror the locked-to-primary "above" calculation using config offsets
+            local primaryVisualTop = baseCenterY + (primaryHeight / 2) + primaryBorderSize
+            local aboveCenterY = primaryVisualTop + (secondaryHeight / 2) + secondaryBorderSize - 1
+
+            offsetX = QUICore:PixelRound(baseCenterX + (secCfg.offsetX or 0), bar)
+            offsetY = QUICore:PixelRound(aboveCenterY + (secCfg.offsetY or 0), bar)
+        else
+            -- Secondary has its own standalone position — use it directly
+            offsetX = QUICore:PixelRound(secCfg.offsetX or 0, bar)
+            offsetY = QUICore:PixelRound(secCfg.offsetY or 0, bar)
+            local secWidth = secCfg.width
+            if secWidth and secWidth > 0 then
+                width = secWidth
+            end
+        end
+    else
+        offsetX = QUICore:PixelRound(cfg.offsetX or 0, bar)
+        offsetY = QUICore:PixelRound(cfg.offsetY or 0, bar)
+    end
 
     -- Only reposition when offset actually changed (prevents flicker)
-    if bar._cachedX ~= offsetX or bar._cachedY ~= offsetY then
+    local swapMode = isSwapped and "swappedToSecondary" or nil
+    if bar._cachedX ~= offsetX or bar._cachedY ~= offsetY or bar._cachedAutoMode ~= swapMode then
         bar:ClearAllPoints()
         bar:SetPoint("CENTER", UIParent, "CENTER", offsetX, offsetY)
         bar._cachedX = offsetX
         bar._cachedY = offsetY
+        bar._cachedAutoMode = swapMode
         -- Notify unit frames that may be anchored to this power bar
         if _G.QUI_UpdateAnchoredUnitFrames then
             _G.QUI_UpdateAnchoredUnitFrames()
@@ -2054,12 +2144,41 @@ function QUICore:UpdateSecondaryPowerBar()
     bar.StatusBar:SetOrientation(isVertical and "VERTICAL" or "HORIZONTAL")
 
     -- =====================================================
-    -- LOCKED TO PRIMARY MODE (highest priority positioning)
+    -- SWAP TO PRIMARY POSITION (highest priority positioning)
     -- =====================================================
     local width
     local lockedToPrimaryHandled = false
 
-    if cfg.lockedToPrimary then
+    if cfg.swapToPrimaryPosition and ShouldSwapBars() then
+        -- Position secondary bar at primary bar's configured position with primary bar's width
+        local primaryCfg = self.db.profile.powerBar
+        if primaryCfg then
+            local offsetX = QUICore:PixelRound(primaryCfg.offsetX or 0, bar)
+            local offsetY = QUICore:PixelRound(primaryCfg.offsetY or 25, bar)
+
+            if bar._cachedX ~= offsetX or bar._cachedY ~= offsetY or bar._cachedAutoMode ~= "swappedToPrimary" then
+                bar:ClearAllPoints()
+                bar:SetPoint("CENTER", UIParent, "CENTER", offsetX, offsetY)
+                bar._cachedX = offsetX
+                bar._cachedY = offsetY
+                bar._cachedAnchor = nil
+                bar._cachedAutoMode = "swappedToPrimary"
+                if _G.QUI_UpdateAnchoredUnitFrames then
+                    _G.QUI_UpdateAnchoredUnitFrames()
+                end
+            end
+
+            -- Use primary bar's width
+            width = primaryCfg.width
+            if not width or width <= 0 then width = 326 end
+            lockedToPrimaryHandled = true
+        end
+    end
+
+    -- =====================================================
+    -- LOCKED TO PRIMARY MODE
+    -- =====================================================
+    if not lockedToPrimaryHandled and cfg.lockedToPrimary then
         local primaryBar = self.powerBar
         local primaryCfg = self.db.profile.powerBar
 
@@ -2537,6 +2656,15 @@ function QUICore:OnUnitPower(_, unit)
 end
 
 
+-- UNIT_AURA handler for aura-based resources (Maelstrom Weapon stacks)
+function QUICore:OnUnitAura(_, unit)
+    if unit and unit ~= "player" then return end
+    local resource = GetSecondaryResource()
+    if resource == Enum.PowerType.MaelstromWeapon then
+        self:UpdateSecondaryPowerBar()
+    end
+end
+
 -- REFRESH
 
 local oldRefreshAll = QUICore.RefreshAll
@@ -2616,6 +2744,7 @@ local function InitializeResourceBars(self)
     self:RegisterEvent("UNIT_POWER_UPDATE", "OnUnitPower")
     self:RegisterEvent("UNIT_MAXPOWER", "OnUnitPower")
     self:RegisterEvent("RUNE_POWER_UPDATE", "OnRunePowerUpdate")  -- DK rune updates (event-driven, replaces ticker)
+    self:RegisterEvent("UNIT_AURA", "OnUnitAura")  -- Aura-based resources (Maelstrom Weapon stacks)
 
     -- Combat state events - force update on combat transitions
     -- Ensures bars show correct values when entering/exiting combat
@@ -2624,6 +2753,9 @@ local function InitializeResourceBars(self)
 
     -- Target change - needed for visibility modes (hostile target, etc.)
     self:RegisterEvent("PLAYER_TARGET_CHANGED", "OnUnitPower")
+
+    -- Mount state - needed so CDM visibility (hideWhenMounted, etc.) hides resource bars
+    self:RegisterEvent("PLAYER_MOUNT_DISPLAY_CHANGED", "OnShapeshiftChanged")
 
     -- Ensure Demon Hunter soul bar is spawned
     EnsureDemonHunterSoulBar()

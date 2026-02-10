@@ -816,6 +816,7 @@ local defaults = {
             enabled = true,
             alertPosition = { point = "TOP", relPoint = "TOP", x = 1.667, y = -293.333 },
             toastPosition = { point = "CENTER", relPoint = "CENTER", x = -5.833, y = 268.333 },
+            bnetToastPosition = nil, -- nil = default Blizzard positioning
         },
 
         -- Missing Raid Buffs Display Settings
@@ -1350,6 +1351,28 @@ local defaults = {
             lockedToEssential = false,  -- Auto-resize width when Essential CDM changes
             lockedToUtility   = false,  -- Auto-resize width when Utility CDM changes
             lockedToPrimary   = true,   -- Position above + match Primary bar width
+            swapToPrimaryPosition = false,  -- Show secondary bar at primary bar's position (supported specs only)
+            hidePrimaryOnSwap = false,      -- Auto-hide primary bar when secondary is swapped to its position
+            swapSpecs = {                   -- Per-spec swap enable (all candidates default on)
+                [66]   = true,  -- Paladin: Protection
+                [70]   = true,  -- Paladin: Retribution
+                [263]  = true,  -- Shaman: Enhancement
+                [265]  = true,  -- Warlock: Affliction
+                [266]  = true,  -- Warlock: Demonology
+                [267]  = true,  -- Warlock: Destruction
+                [1467] = true,  -- Evoker: Devastation
+                [1473] = true,  -- Evoker: Augmentation
+            },
+            hideSpecs = {                   -- Per-spec auto-hide enable (all candidates default on)
+                [66]   = true,  -- Paladin: Protection
+                [70]   = true,  -- Paladin: Retribution
+                [263]  = true,  -- Shaman: Enhancement
+                [265]  = true,  -- Warlock: Affliction
+                [266]  = true,  -- Warlock: Demonology
+                [267]  = true,  -- Warlock: Destruction
+                [1467] = true,  -- Evoker: Devastation
+                [1473] = true,  -- Evoker: Augmentation
+            },
             snapGap       = 5,        -- Gap when snapped
             orientation   = "AUTO",   -- Bar orientation
             visibility    = "always",  -- "always", "combat", "hostile"
@@ -1366,6 +1389,7 @@ local defaults = {
             fury = { 0.79, 0.26, 0.99, 1 },
             insanity = { 0.40, 0.00, 0.80, 1 },
             maelstrom = { 0.00, 0.50, 1.00, 1 },
+            maelstromWeapon = { 0.00, 0.69, 1.00, 1 },
             lunarPower = { 0.30, 0.52, 0.90, 1 },
 
             -- Builder Resources
@@ -1523,6 +1547,11 @@ local defaults = {
             copyButtonMode = "always",
             -- Intro message on login
             showIntroMessage = true,
+            -- Message history cache for arrow key navigation
+            messageHistory = {
+                enabled = true,
+                maxHistory = 50,  -- Maximum number of messages to store
+            },
         },
 
         -- Tooltip Management
@@ -3102,6 +3131,7 @@ local defaults = {
             hideTalkingHead = true,
             muteTalkingHead = false,
             hideErrorMessages = false,
+            hideInfoMessages = false,
             hideMinimapZoomButtons = true,
             hideWorldMapBlackout = true,
             hideTalkingHeadFrame = true,
@@ -3387,6 +3417,42 @@ local defaults = {
             swipeColor = {0, 0, 0, 0.6},
         },
 
+        -- DandersFrames Integration: Anchor DF containers to QUI elements
+        dandersFrames = {
+            party = {
+                enabled = false,
+                anchorTo = "disabled",
+                sourcePoint = "TOP",
+                targetPoint = "BOTTOM",
+                offsetX = 0,
+                offsetY = -5,
+            },
+            raid = {
+                enabled = false,
+                anchorTo = "disabled",
+                sourcePoint = "TOP",
+                targetPoint = "BOTTOM",
+                offsetX = 0,
+                offsetY = -5,
+            },
+            pinned1 = {
+                enabled = false,
+                anchorTo = "disabled",
+                sourcePoint = "TOP",
+                targetPoint = "BOTTOM",
+                offsetX = 0,
+                offsetY = -5,
+            },
+            pinned2 = {
+                enabled = false,
+                anchorTo = "disabled",
+                sourcePoint = "TOP",
+                targetPoint = "BOTTOM",
+                offsetX = 0,
+                offsetY = -5,
+            },
+        },
+
         -- HUD Layering: Control frame level ordering for HUD elements
         -- Higher values appear above lower values (range 0-10)
         hudLayering = {
@@ -3661,6 +3727,25 @@ function QUICore:OnProfileChanged(event, db, profileKey)
         end)
     end
     
+    -- Reset castbar previewMode flags before refreshing unit frames.
+    -- previewMode is a transient UI state (options panel toggle) that should not
+    -- persist across profile changes, but it lives in the DB and gets copied along.
+    if self.db.profile.quiUnitFrames then
+        for _, unitKey in ipairs({"player", "target", "focus"}) do
+            local unitDB = self.db.profile.quiUnitFrames[unitKey]
+            if unitDB and unitDB.castbar then
+                unitDB.castbar.previewMode = false
+            end
+        end
+        -- Also clear boss castbar previews
+        for i = 1, 8 do
+            local bossDB = self.db.profile.quiUnitFrames["boss" .. i]
+            if bossDB and bossDB.castbar then
+                bossDB.castbar.previewMode = false
+            end
+        end
+    end
+
     -- Refresh Unit Frames (including castbars) on profile change
     C_Timer.After(0.2, function()
         if _G.QUI_RefreshUnitFrames then
@@ -4148,6 +4233,8 @@ function QUICore:OnEnable()
             self:ForceReskinAllViewers()
         end
     end)
+
+    self:SetupEncounterWarningsSecretValuePatch()
 end
 
 function QUICore:OpenConfig()
@@ -5077,6 +5164,116 @@ function QUICore:HookEditMode()
             end
         end)
     end
+
+-- Patch Blizzard EncounterWarnings to avoid secret value compare errors in Edit Mode
+function QUICore:SetupEncounterWarningsSecretValuePatch()
+    if self.__encounterWarningsPatchSetup then return end
+    self.__encounterWarningsPatchSetup = true
+
+    local function TryPatch()
+        if self.__encounterWarningsPatched then return true end
+        if not EncounterWarningsTextElementMixin
+            or type(EncounterWarningsTextElementMixin.Init) ~= "function"
+            or not EncounterWarningsViewElementMixin
+            or not EncounterWarningsUtil then
+            return false
+        end
+
+        local originalInit = EncounterWarningsTextElementMixin.Init
+        EncounterWarningsTextElementMixin.Init = function(textElement, encounterWarningInfo, parentView)
+            local ok, err = pcall(originalInit, textElement, encounterWarningInfo, parentView)
+            if ok then
+                return
+            end
+
+            if type(err) == "string" and err:find("secret value") then
+                pcall(EncounterWarningsViewElementMixin.Init, textElement, encounterWarningInfo, parentView)
+
+                local maximumTextSize = EncounterWarningsUtil.GetMaximumTextSizeForSeverity(encounterWarningInfo.severity)
+                if type(maximumTextSize) ~= "table" then
+                    maximumTextSize = { width = 0, height = 0 }
+                end
+                local textFontObject = EncounterWarningsUtil.GetFontObjectForSeverity(encounterWarningInfo.severity)
+                local textColor = EncounterWarningsUtil.GetTextColorForSeverity(encounterWarningInfo.severity)
+
+                if textFontObject then
+                    textElement:SetFontObject(textFontObject)
+                end
+                if textColor and textColor.GetRGB then
+                    textElement:SetTextColor(textColor:GetRGB())
+                end
+                textElement:SetTextScale(1)
+
+                local setOk = pcall(textElement.SetTextToFit, textElement, encounterWarningInfo.text)
+                if not setOk then
+                    pcall(textElement.SetText, textElement, "")
+                end
+
+                local maxHeight = maximumTextSize.height or 0
+                local maxWidth = maximumTextSize.width or 0
+                textElement:SetHeight(maxHeight)
+
+                local widthOk, tooWide = pcall(function()
+                    return textElement:GetStringWidth() > maxWidth
+                end)
+                if widthOk and tooWide then
+                    textElement:SetWidth(maxWidth)
+                    pcall(textElement.ScaleTextToFit, textElement)
+                end
+                return
+            end
+
+            error(err, 0)
+        end
+
+        -- Also patch the global EncounterWarnings instance directly.
+        -- When the addon loads, XML templates create frame instances via Mixin()
+        -- which copies the ORIGINAL Init onto them before our mixin patch runs.
+        -- Wrapping SetIsEditing on the instance catches the entire call chain:
+        -- SetIsEditing → OnEditingChanged → ShowWarning → view:ShowWarning → Text:Init
+        local ew = _G.EncounterWarnings
+        if ew and type(ew.SetIsEditing) == "function" then
+            local origSetIsEditing = ew.SetIsEditing
+            ew.SetIsEditing = function(ewSelf, ...)
+                local ok2, err2 = pcall(origSetIsEditing, ewSelf, ...)
+                if not ok2 then
+                    if type(err2) == "string" and err2:find("secret value") then
+                        return
+                    end
+                    error(err2, 0)
+                end
+            end
+        end
+
+        self.__encounterWarningsPatched = true
+        return true
+    end
+
+    if TryPatch() then
+        return
+    end
+
+    local patchFrame = CreateFrame("Frame")
+    patchFrame:RegisterEvent("ADDON_LOADED")
+    patchFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+    patchFrame:SetScript("OnEvent", function(_, event, addonName)
+        if event == "ADDON_LOADED" and addonName == "Blizzard_EncounterWarnings" then
+            if TryPatch() then
+                patchFrame:UnregisterAllEvents()
+            end
+        elseif event == "PLAYER_ENTERING_WORLD" then
+            patchFrame:UnregisterEvent("PLAYER_ENTERING_WORLD")
+            if not self.__encounterWarningsPatched then
+                TryPatch()
+            end
+            if self.__encounterWarningsPatched then
+                patchFrame:UnregisterAllEvents()
+            end
+        end
+    end)
+
+    self.__encounterWarningsPatchFrame = patchFrame
+end
 
 -- Process pending backdrops that were deferred due to secret values
 function QUICore:ProcessPendingBackdrops()

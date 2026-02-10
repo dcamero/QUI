@@ -287,6 +287,7 @@ local function CreateTextElement(statusBar, fontSize, layer)
     local text = statusBar:CreateFontString(nil, layer or "OVERLAY")
     text:SetFont(GetFontPath(), fontSize, GetFontOutline())
     text:SetTextColor(1, 1, 1, 1)
+    text:SetWordWrap(false)
     return text
 end
 
@@ -543,6 +544,24 @@ local function UpdateCastbarElements(anchorFrame, unitKey, castSettings)
         currentCastSettings.timeTextOffsetY or 0,
         showTimeText
     )
+
+    -- Constrain spell text width so it doesn't overflow the status bar
+    if anchorFrame.spellText and anchorFrame.statusBar then
+        local barWidth = anchorFrame.statusBar:GetWidth()
+        if barWidth and barWidth > 0 then
+            local spellPad = math.abs(currentCastSettings.spellTextOffsetX or 4)
+            local timePad = math.abs(currentCastSettings.timeTextOffsetX or -4)
+            local timeWidth = 0
+            if showTimeText and anchorFrame.timeText then
+                timeWidth = anchorFrame.timeText:GetStringWidth()
+                -- If no active cast, estimate from font size (covers "00.0" style text)
+                if timeWidth == 0 then
+                    timeWidth = (currentCastSettings.fontSize or 10) * 3.5
+                end
+            end
+            anchorFrame.spellText:SetWidth(math.max(1, barWidth - spellPad - timePad - timeWidth - 2))
+        end
+    end
 
     -- Empowered level text (player only)
     if unitKey == "player" and anchorFrame.empoweredLevelText then
@@ -2341,18 +2360,15 @@ local EDIT_MODE_CASTBAR_UNITS = {"player", "target", "focus"}
 -- Check if the "Cast Bar" checkbox is enabled in Edit Mode
 local function IsCastBarEnabledInEditMode()
     -- PlayerCastingBarFrame has the Edit Mode visibility setting
-    -- When the checkbox is unchecked, Blizzard hides the frame
-    if PlayerCastingBarFrame and PlayerCastingBarFrame.IsInDefaultPosition then
-        -- In Edit Mode, when unchecked, the frame's isShown flag in Edit Mode settings is false
-        -- We can check this by looking at the frame's visibility state
-        -- However, since we've hidden it, we need to check the Edit Mode setting directly
-        if PlayerCastingBarFrame.GetSettingValue then
-            -- Check the visibility setting (Enum.EditModeCastBarSetting.ShowCastBar or similar)
-            local ok, shown = pcall(function()
+    -- All access wrapped in pcall — frame can be forbidden in 12.0.x beta
+    if PlayerCastingBarFrame then
+        local ok, shown = pcall(function()
+            if PlayerCastingBarFrame.IsInDefaultPosition and PlayerCastingBarFrame.GetSettingValue then
                 return PlayerCastingBarFrame:IsShownInMode()
-            end)
-            if ok then return shown end
-        end
+            end
+            return nil
+        end)
+        if ok and shown ~= nil then return shown end
     end
     -- Default to enabled if we can't determine
     return EditModeState.castBarCheckboxEnabled
@@ -2781,27 +2797,29 @@ C_Timer.After(0.5, function()
 
         -- Hook PlayerCastingBarFrame visibility changes to sync with QUI castbar
         -- When the "Cast Bar" checkbox is toggled in Edit Mode, Blizzard changes visibility
+        -- Wrapped in pcall — frame can be forbidden in 12.0.x beta
         if PlayerCastingBarFrame then
-            -- Hook SetShown (main visibility method used by Edit Mode)
-            hooksecurefunc(PlayerCastingBarFrame, "SetShown", function(_, shown)
-                if EditModeState.active then
-                    EditModeState.castBarCheckboxEnabled = shown
-                    UpdateCastbarVisibilityForEditMode()
-                end
+            local ok, err = pcall(function()
+                hooksecurefunc(PlayerCastingBarFrame, "SetShown", function(_, shown)
+                    if EditModeState.active then
+                        EditModeState.castBarCheckboxEnabled = shown
+                        UpdateCastbarVisibilityForEditMode()
+                    end
+                end)
+                hooksecurefunc(PlayerCastingBarFrame, "Show", function()
+                    if EditModeState.active then
+                        EditModeState.castBarCheckboxEnabled = true
+                        UpdateCastbarVisibilityForEditMode()
+                    end
+                end)
+                hooksecurefunc(PlayerCastingBarFrame, "Hide", function()
+                    if EditModeState.active then
+                        EditModeState.castBarCheckboxEnabled = false
+                        UpdateCastbarVisibilityForEditMode()
+                    end
+                end)
             end)
-            -- Also hook Show/Hide for broader compatibility
-            hooksecurefunc(PlayerCastingBarFrame, "Show", function()
-                if EditModeState.active then
-                    EditModeState.castBarCheckboxEnabled = true
-                    UpdateCastbarVisibilityForEditMode()
-                end
-            end)
-            hooksecurefunc(PlayerCastingBarFrame, "Hide", function()
-                if EditModeState.active then
-                    EditModeState.castBarCheckboxEnabled = false
-                    UpdateCastbarVisibilityForEditMode()
-                end
-            end)
+            if not ok then QUI:DebugPrint("Could not hook PlayerCastingBarFrame for Edit Mode: " .. tostring(err)) end
         end
 
         -- Check if Edit Mode is already active (e.g., /reload while in Edit Mode)

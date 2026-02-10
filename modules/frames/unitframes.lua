@@ -2373,9 +2373,12 @@ local function CreateAuraIcon(parent, index, size, auraSettings, isDebuff)
     -- noCooldownCount removed to enable Blizzard countdown text (styled via ApplyAuraIconSettings)
     icon.cooldown = cd
 
-    -- Stack count (position/font set by ApplyAuraIconSettings)
-    local count = icon:CreateFontString(nil, "OVERLAY")
-    count:SetPoint("BOTTOMRIGHT", -iconPx, iconPx)  -- default, will be updated by settings
+    -- Stack count — parented to an overlay frame above the cooldown swipe
+    local stackOverlay = CreateFrame("Frame", nil, icon)
+    stackOverlay:SetAllPoints(icon)
+    stackOverlay:SetFrameLevel(cd:GetFrameLevel() + 1)
+    local count = stackOverlay:CreateFontString(nil, "OVERLAY")
+    count:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", -iconPx, iconPx)  -- default, will be updated by settings
     count:SetTextColor(1, 1, 1, 1)
     icon.count = count
     icon._showStack = true  -- default
@@ -3181,8 +3184,11 @@ function QUI_UF:ShowAuraPreviewForFrame(frame, unitKey, auraType)
             cd.noCooldownCount = true
             icon.cooldown = cd
 
-            -- Stack count
-            local count = icon:CreateFontString(nil, "OVERLAY")
+            -- Stack count — parented above the cooldown swipe
+            local stackOverlay = CreateFrame("Frame", nil, icon)
+            stackOverlay:SetAllPoints(icon)
+            stackOverlay:SetFrameLevel(cd:GetFrameLevel() + 1)
+            local count = stackOverlay:CreateFontString(nil, "OVERLAY")
             count:SetTextColor(1, 1, 1, 1)
             icon.count = count
 
@@ -4144,16 +4150,27 @@ function QUI_UF:EnableEditMode()
         end)
         exitBtn:SetScript("OnClick", function()
             if EditModeManagerFrame and EditModeManagerFrame:IsShown() then
-                -- Save changes first
+                -- Close any open system settings panel before exit. Having a panel
+                -- open (e.g. "Tracked Bars") taints the execution context so that
+                -- Blizzard's OnEditModeExit → ResetPartyFrames → party frame updates
+                -- hit secret values (maxHealth/checkedRange) and error, aborting exit.
+                if EditModeManagerFrame.ClearSelectedSystem then
+                    pcall(EditModeManagerFrame.ClearSelectedSystem, EditModeManagerFrame)
+                end
+                -- Save changes
                 if EditModeManagerFrame.SaveLayoutChanges then
                     pcall(EditModeManagerFrame.SaveLayoutChanges, EditModeManagerFrame)
                 end
-                -- Then exit (pcall: Blizzard's exit path can trigger secret value
-                -- errors in CompactUnitFrame_UpdateInRange via party frame refresh)
+                -- Then exit
                 pcall(HideUIPanel, EditModeManagerFrame)
-            else
-                -- Fallback for /qui editmode case
-                QUI_UF:DisableEditMode()
+            end
+            -- Always clean up QUI edit mode regardless of Blizzard exit success.
+            -- In the success case, the ExitEditMode hook already called DisableEditMode
+            -- (which sets editModeActive=false), so this is a no-op.
+            -- In the failure case, this is the only cleanup path.
+            if QUI_UF.editModeActive then
+                QUI_UF.triggeredByBlizzEditMode = false
+                pcall(QUI_UF.DisableEditMode, QUI_UF)
             end
         end)
 
@@ -4448,11 +4465,12 @@ function QUI_UF:DisableEditMode()
         end
         
         -- Update frame with real data if unit exists
+        -- pcall: UnitHealth/UnitPower can return secret values that error in comparisons
         if UnitExists(frame.unit) or unitKey == "player" then
-            UpdateFrame(frame)
+            pcall(UpdateFrame, frame)
         end
     end
-    
+
     print("|cFF56D1FFQUI|r: Edit Mode |cffff0000DISABLED|r - Positions saved.")
 end
 
@@ -4627,28 +4645,39 @@ function QUI_UF:HideBlizzardFrames()
     end
     
     -- Hide Blizzard Player Castbar if our QUI player castbar is enabled
+    -- NOTE: As of 12.0.x beta, CastingBarFrame can be a forbidden/restricted frame.
+    -- All interactions are wrapped in pcall to prevent errors from blocking initialization.
     if db.player and db.player.castbar and db.player.castbar.enabled then
         if PlayerCastingBarFrame then
-            PlayerCastingBarFrame:SetAlpha(0)
-            PlayerCastingBarFrame:SetScale(0.0001)
-            PlayerCastingBarFrame:SetPoint("BOTTOMLEFT", UIParent, "TOPLEFT", -10000, 10000)
-            PlayerCastingBarFrame:UnregisterAllEvents()
-            if PlayerCastingBarFrame.SetUnit then
+            local ok, err = pcall(function()
+                PlayerCastingBarFrame:SetAlpha(0)
+                PlayerCastingBarFrame:SetScale(0.0001)
+                PlayerCastingBarFrame:SetPoint("BOTTOMLEFT", UIParent, "TOPLEFT", -10000, 10000)
+                PlayerCastingBarFrame:UnregisterAllEvents()
+            end)
+            if not ok then QUI:DebugPrint("Could not hide PlayerCastingBarFrame: " .. tostring(err)) end
+            local ok2, err2 = pcall(function()
                 PlayerCastingBarFrame:SetUnit(nil)
-            end
-            -- Hook Show to prevent Blizzard from ever showing (catches talent changes, etc.)
-            if not PlayerCastingBarFrame._quiShowHooked then
-                PlayerCastingBarFrame._quiShowHooked = true
-                hooksecurefunc(PlayerCastingBarFrame, "Show", function(self)
-                    self:Hide()
-                end)
-            end
+            end)
+            if not ok2 then QUI:DebugPrint("Could not detach PlayerCastingBarFrame unit: " .. tostring(err2)) end
+            local ok3, err3 = pcall(function()
+                if not PlayerCastingBarFrame._quiShowHooked then
+                    PlayerCastingBarFrame._quiShowHooked = true
+                    hooksecurefunc(PlayerCastingBarFrame, "Show", function(self)
+                        pcall(function() self:Hide() end)
+                    end)
+                end
+            end)
+            if not ok3 then QUI:DebugPrint("Could not hook PlayerCastingBarFrame:Show: " .. tostring(err3)) end
         end
         -- Also hide the pet castbar if it exists
         if PetCastingBarFrame then
-            PetCastingBarFrame:SetAlpha(0)
-            PetCastingBarFrame:SetScale(0.0001)
-            PetCastingBarFrame:UnregisterAllEvents()
+            local ok, err = pcall(function()
+                PetCastingBarFrame:SetAlpha(0)
+                PetCastingBarFrame:SetScale(0.0001)
+                PetCastingBarFrame:UnregisterAllEvents()
+            end)
+            if not ok then QUI:DebugPrint("Could not hide PetCastingBarFrame: " .. tostring(err)) end
         end
     end
     
@@ -4838,6 +4867,12 @@ function QUI_UF:HookBlizzardEditMode()
     if not EditModeManagerFrame then return end
     if self._blizzEditModeHooked then return end
     self._blizzEditModeHooked = true
+
+    -- NOTE: Do NOT wrap AccountSettings:OnEditModeExit or any Blizzard exit
+    -- functions in addon pcall — this taints the execution context and causes
+    -- ADDON_ACTION_FORBIDDEN for protected functions like ClearTarget().
+    -- The secret value error in ResetPartyFrames is a Blizzard bug; we handle
+    -- it via the safety net in the OnClick handler (always calls DisableEditMode).
 
     -- Track if we triggered from Blizzard Edit Mode (vs /qui editmode)
     self.triggeredByBlizzEditMode = false
