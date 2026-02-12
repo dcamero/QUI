@@ -138,20 +138,27 @@ local function FormatTimeRemaining(seconds)
 end
 
 -- Get all tracked currencies from the backpack
--- @return table Array of {id (name), name, quantity, iconFileID, displayOrder}
+-- @return table Array of {id (currency id string), currencyID, name, quantity, iconFileID, maxQuantity, displayOrder}
 -- Returns currencies in default order (as returned by C_CurrencyInfo.GetBackpackCurrencyInfo)
 local function GetTrackedCurrencies()
+    if not C_CurrencyInfo or not C_CurrencyInfo.GetBackpackCurrencyInfo then
+        return {}
+    end
+
     local currencies = {}
     local i = 1
     while true do
         local info = C_CurrencyInfo.GetBackpackCurrencyInfo(i)
         if not info then break end
-        if info.quantity then
+        local currencyID = info.currencyTypesID or info.currencyID
+        if currencyID and info.quantity ~= nil then
             table.insert(currencies, {
-                id = info.name,  -- Use name as unique identifier
-                name = info.name,
+                id = tostring(currencyID),
+                currencyID = currencyID,
+                name = info.name or ("Currency " .. tostring(currencyID)),
                 quantity = info.quantity,
                 iconFileID = info.iconFileID,
+                maxQuantity = info.maxQuantity,
                 displayOrder = i,
             })
         end
@@ -2569,9 +2576,9 @@ Datatexts:Register("currencies", {
             for slotIndex = 1, 3 do
                 local configValue = currencyOrder[slotIndex]
                 if configValue ~= "none" then
-                    -- Find currency by ID
+                    -- Find currency by ID; also support legacy name-based values.
                     for _, curr in ipairs(allCurrencies) do
-                        if tostring(curr.id) == configValue then
+                        if curr.id == tostring(configValue) or curr.name == configValue then
                             table.insert(ordered, curr)
                             seen[curr.id] = true
                             break

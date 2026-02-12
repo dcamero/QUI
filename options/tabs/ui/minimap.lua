@@ -861,14 +861,17 @@ BuildDatatextTab = function(tabContent)
         -- Helper function to get available currencies for dropdowns
         local function GetAvailableCurrencies()
             local currencies = {}
+            local seenCurrencyIds = {}
             if _G.C_CurrencyInfo then
                 local i = 1
                 while true do
                     local info = C_CurrencyInfo.GetBackpackCurrencyInfo(i)
                     if not info then break end
-                    if info.quantity then
+                    local currencyID = info.currencyTypesID or info.currencyID
+                    if currencyID and info.name and info.quantity ~= nil and not seenCurrencyIds[currencyID] then
+                        seenCurrencyIds[currencyID] = true
                         table.insert(currencies, {
-                            value = info.name,
+                            value = tostring(currencyID),
                             text = info.name,
                         })
                     end
@@ -878,49 +881,64 @@ BuildDatatextTab = function(tabContent)
             return currencies
         end
 
-        -- Helper function to refresh currencies dropdowns and prevent duplicates
         local currencyDropdowns = {}
-        local function RefreshCurrencyDropdowns()
+
+        local function NormalizeCurrencyOrder()
             local currencies = GetAvailableCurrencies()
-            local options = {{value = "none", text = "None"}}
-            
+            local availableValues = {}
+            local valueByName = {}
             for _, currency in ipairs(currencies) do
-                table.insert(options, currency)
+                availableValues[currency.value] = true
+                valueByName[currency.text] = currency.value
             end
 
+            local used = {}
             for i = 1, 3 do
-                if currencyDropdowns[i] then
-                    -- Update the options
-                    currencyDropdowns[i].options = options
-                    -- Re-set current value to ensure it still displays correctly
-                    local currentValue = dt.currencyOrder[i] or "none"
-                    if currencyDropdowns[i].dropdown and currencyDropdowns[i].dropdown.selected then
-                        local displayText = "None"
-                        for _, opt in ipairs(options) do
-                            if opt.value == currentValue then
-                                displayText = opt.text
-                                break
-                            end
+                local rawValue = dt.currencyOrder[i]
+                if type(rawValue) == "number" then
+                    rawValue = tostring(rawValue)
+                end
+
+                local normalized = "none"
+                if type(rawValue) == "string" and rawValue ~= "" and rawValue ~= "none" then
+                    if availableValues[rawValue] then
+                        normalized = rawValue
+                    else
+                        local numericValue = tostring(tonumber(rawValue) or "")
+                        if numericValue ~= "" and availableValues[numericValue] then
+                            normalized = numericValue
+                        elseif valueByName[rawValue] then
+                            normalized = valueByName[rawValue]
                         end
-                        currencyDropdowns[i].dropdown.selected:SetText(displayText)
                     end
                 end
+
+                if normalized ~= "none" then
+                    if used[normalized] then
+                        normalized = "none"
+                    else
+                        used[normalized] = true
+                    end
+                end
+
+                dt.currencyOrder[i] = normalized
             end
         end
 
         -- Helper function to prevent duplicate selections
         local function OnCurrencySelected(slotNumber)
             return function(value)
-                dt.currencyOrder[slotNumber] = value
+                local selected = tostring(value or "none")
+                dt.currencyOrder[slotNumber] = selected
                 
                 -- Check if this value is now selected in multiple dropdowns
-                if value ~= "none" then
+                if selected ~= "none" then
                     for i = 1, 3 do
-                        if i ~= slotNumber and dt.currencyOrder[i] == value then
+                        if i ~= slotNumber and dt.currencyOrder[i] == selected then
                             -- Reset other slot to none
                             dt.currencyOrder[i] = "none"
                             if currencyDropdowns[i] and currencyDropdowns[i].SetValue then
-                                currencyDropdowns[i].SetValue(currencyDropdowns[i], "none", true)
+                                currencyDropdowns[i].SetValue("none", true)
                             end
                         end
                     end
@@ -932,6 +950,8 @@ BuildDatatextTab = function(tabContent)
                 end
             end
         end
+
+        NormalizeCurrencyOrder()
 
         -- Create 3 currency order dropdowns
         for slot = 1, 3 do
