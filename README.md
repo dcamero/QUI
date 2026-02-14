@@ -1,7 +1,7 @@
 [![GitHub release](https://img.shields.io/github/v/release/zol-wow/QUI)](https://github.com/zol-wow/QUI/releases)
 [![GPLv3 License](https://img.shields.io/badge/License-GPL%20v3-yellow.svg)](https://opensource.org/licenses/)
 [![Discord](https://img.shields.io/badge/discord-QUI_2.0-0da37b?logo=discord&logoColor=white)](https://discord.gg/VFVv8bhQ)
-[![KoFi](https://img.shields.io/badge/KoFi-Zol-0da37b?logo=kofi&logoColor=white)](https://ko-fi.com/zol__)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20me-ff5e5b?logo=ko-fi&logoColor=white)](https://ko-fi.com/zol__)
 
 # QUI 2.0 – QuaziiUI continued and kept alive
 
