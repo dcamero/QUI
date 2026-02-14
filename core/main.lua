@@ -1669,6 +1669,7 @@ local defaults = {
                     widthAdjustment = 0,
                     fontSize = 14,
                     color = {0.2, 0.6, 1, 1},
+                    notInterruptibleColor = {0.7, 0.2, 0.2, 1},
                     anchor = "unitframe",
                     texture = "Quazii v5",
                     bgColor = {0.149, 0.149, 0.149, 1},
@@ -2015,6 +2016,7 @@ local defaults = {
                     widthAdjustment = 0,
                     fontSize = 14,
                     color = {0.2, 0.6, 1, 1},
+                    notInterruptibleColor = {0.7, 0.2, 0.2, 1},
                     anchor = "unitframe",
                 },
                 -- Auras (buffs/debuffs)
