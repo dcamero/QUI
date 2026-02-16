@@ -3775,6 +3775,14 @@ function QUICore:OnEnable()
         end
     end)
 
+    -- Helper: apply frame anchoring overrides — marks frames in the gatekeeper set
+    -- and positions them. Called after each init stage to catch newly created frames.
+    local function ApplyFrameOverrides()
+        if ns.QUI_Anchoring then
+            ns.QUI_Anchoring:ApplyAllFrameAnchors()
+        end
+    end
+
     -- DEFERRED 0.5s: Unit frames (secure APIs now safe) + global font override + alerts
     C_Timer.After(0.5, function()
         if self.UnitFrames and self.db.profile.unitFrames and self.db.profile.unitFrames.enabled then
@@ -3788,6 +3796,8 @@ function QUICore:OnEnable()
         if self.ApplyGlobalFont then
             self:ApplyGlobalFont()
         end
+        -- Mark newly created frames + position overrides (gatekeeper blocks later module repositioning)
+        ApplyFrameOverrides()
     end)
 
     -- DEFERRED 1.0s: First viewer reskin + UI hider + buff borders
@@ -3801,6 +3811,7 @@ function QUICore:OnEnable()
         if _G.QUI_RefreshBuffBorders then
             _G.QUI_RefreshBuffBorders()
         end
+        ApplyFrameOverrides()
     end)
 
     -- DEFERRED 2.0s: Safety retry for late-loading frames
@@ -3808,6 +3819,15 @@ function QUICore:OnEnable()
         if not InCombatLockdown() then
             self:ForceReskinAllViewers()
         end
+        ApplyFrameOverrides()
+    end)
+
+    -- DEFERRED 3.0s: Register all frames as anchor targets + final override apply
+    C_Timer.After(3.0, function()
+        if ns.QUI_Anchoring then
+            ns.QUI_Anchoring:RegisterAllFrameTargets()
+        end
+        ApplyFrameOverrides()
     end)
 
     self:SetupEncounterWarningsSecretValuePatch()
@@ -3959,6 +3979,12 @@ function QUICore:HookEditMode()
     combatEndFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
     combatEndFrame:SetScript("OnEvent", function(frame, event)
         if event == "PLAYER_REGEN_ENABLED" then
+            -- Reapply frame anchoring overrides deferred during combat
+            C_Timer.After(0.3, function()
+                if _G.QUI_ApplyAllFrameAnchors then
+                    _G.QUI_ApplyAllFrameAnchors()
+                end
+            end)
             -- Small delay to let things settle after combat
             C_Timer.After(0.2, function()
                 -- Check if any icons need re-skinning
