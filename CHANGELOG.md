@@ -31,6 +31,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+## v2.37.0 - 2026-02-17
+
+### Added
+- added option for minimum HUD width in anchoring options
+- added castbar channel ticks feature
+- added more options to suppress Blizzard popup modals and notifications
+- added option to lock brez timer and counter in place
+
+### Fixed
+- fixed some in-combat frame drifting issues when spells morphed
+- fixed missing raid buff preview not working
 ## v2.36.1 - 2026-02-17
 
 ### Added
