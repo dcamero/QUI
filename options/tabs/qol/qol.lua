@@ -748,6 +748,77 @@ local function BuildGeneralTab(tabContent)
         end
 
         local popupToggleWidgets = {}
+        local popupSearchKeywords = {
+            enabled = {
+                "popup blocker",
+                "toast blocker",
+                "block popups",
+                "block toasts",
+                "disable popups",
+            },
+            blockTalentMicroButtonAlerts = {
+                "unspent talent",
+                "talent reminder",
+                "microbutton alert",
+                "player spells",
+                "spellbook alert",
+            },
+            blockEventToasts = {
+                "event toast",
+                "campaign toast",
+                "housing toast",
+                "blizzard news toast",
+            },
+            blockMountAlerts = {
+                "new mount",
+                "mount toast",
+                "wrapped mount",
+                "unwrapped mount",
+            },
+            blockPetAlerts = {
+                "new pet",
+                "pet toast",
+                "companion pet",
+            },
+            blockToyAlerts = {
+                "new toy",
+                "toy toast",
+                "toy box",
+            },
+            blockCosmeticAlerts = {
+                "new cosmetic",
+                "cosmetic toast",
+                "appearance unlock",
+            },
+            blockWarbandSceneAlerts = {
+                "warband scene",
+                "warband toast",
+                "housing scene",
+            },
+            blockEntitlementAlerts = {
+                "entitlement",
+                "raf",
+                "recruit a friend",
+                "delivery toast",
+            },
+            blockStaticTalentPopups = {
+                "talent popup",
+                "trait popup",
+                "static popup talent",
+            },
+            blockStaticHousingPopups = {
+                "housing popup",
+                "homestead popup",
+                "static popup housing",
+            },
+        }
+
+        local function GetSearchRegistryInfo(key)
+            local keywords = popupSearchKeywords[key]
+            if not keywords then return nil end
+            return { keywords = keywords }
+        end
+
         local function UpdatePopupToggleState()
             local enabled = popupDB.enabled == true
             for _, widget in ipairs(popupToggleWidgets) do
@@ -757,16 +828,30 @@ local function BuildGeneralTab(tabContent)
             end
         end
 
-        local popupEnableCheck = GUI:CreateFormCheckbox(tabContent, "Enable Popup/Toast Blocker", "enabled", popupDB, function()
-            UpdatePopupToggleState()
-            RefreshPopupBlocker()
-        end)
+        local popupEnableCheck = GUI:CreateFormCheckbox(
+            tabContent,
+            "Enable Popup/Toast Blocker",
+            "enabled",
+            popupDB,
+            function()
+                UpdatePopupToggleState()
+                RefreshPopupBlocker()
+            end,
+            GetSearchRegistryInfo("enabled")
+        )
         popupEnableCheck:SetPoint("TOPLEFT", PADDING, y)
         popupEnableCheck:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
         y = y - FORM_ROW
 
         local function AddPopupToggle(label, key)
-            local check = GUI:CreateFormCheckbox(tabContent, label, key, popupDB, RefreshPopupBlocker)
+            local check = GUI:CreateFormCheckbox(
+                tabContent,
+                label,
+                key,
+                popupDB,
+                RefreshPopupBlocker,
+                GetSearchRegistryInfo(key)
+            )
             check:SetPoint("TOPLEFT", PADDING, y)
             check:SetPoint("RIGHT", tabContent, "RIGHT", -PADDING, 0)
             y = y - FORM_ROW
