@@ -771,15 +771,17 @@ function QUI_Anchoring:SnapTo(frame, anchorTarget, anchorPoint, offsetX, offsetY
 end
 
 -- Update all registered anchored frames
+local pendingAnchoredFrameUpdateAfterCombat = false
+
 function QUI_Anchoring:UpdateAllAnchoredFrames()
-    if InCombatLockdown() then 
-        -- Defer update after combat
-        C_Timer.After(0, function()
-            self:UpdateAllAnchoredFrames()
-        end)
-        return 
+    if InCombatLockdown() then
+        -- Avoid hot-loop requeueing during combat; process once on PLAYER_REGEN_ENABLED.
+        pendingAnchoredFrameUpdateAfterCombat = true
+        return
     end
-    
+
+    pendingAnchoredFrameUpdateAfterCombat = false
+
     for frame, config in pairs(self.anchoredFrames) do
         -- Skip frames with active anchoring overrides — reapply override instead
         -- (callers may have called ClearAllPoints before triggering this update)
@@ -872,6 +874,24 @@ function QUI_Anchoring:UpdateAllAnchoredFrames()
         end
     end
 end
+
+-- If an anchoring update was requested during combat, apply it once combat ends.
+local anchoredFramesCombatFrame = CreateFrame("Frame")
+anchoredFramesCombatFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+anchoredFramesCombatFrame:SetScript("OnEvent", function()
+    if not pendingAnchoredFrameUpdateAfterCombat then return end
+
+    pendingAnchoredFrameUpdateAfterCombat = false
+    C_Timer.After(0.05, function()
+        if InCombatLockdown() then
+            pendingAnchoredFrameUpdateAfterCombat = true
+            return
+        end
+        if QUI_Anchoring then
+            QUI_Anchoring:UpdateAllAnchoredFrames()
+        end
+    end)
+end)
 
 -- Update frames anchored to a specific anchor target
 function QUI_Anchoring:UpdateFramesForTarget(anchorTargetName)
@@ -1007,8 +1027,8 @@ local FRAME_RESOLVERS = {
     playerCastbar = function() return ns.QUI_Castbar and ns.QUI_Castbar.castbars and ns.QUI_Castbar.castbars["player"] end,
     targetCastbar = function() return ns.QUI_Castbar and ns.QUI_Castbar.castbars and ns.QUI_Castbar.castbars["target"] end,
     focusCastbar = function() return ns.QUI_Castbar and ns.QUI_Castbar.castbars and ns.QUI_Castbar.castbars["focus"] end,
-    -- Action Bars
-    bar1 = function() return _G["MainMenuBar"] end,
+    -- Action Bars (MainMenuBar was renamed to MainActionBar in Midnight 12.0)
+    bar1 = function() return _G["MainActionBar"] or _G["MainMenuBar"] end,
     bar2 = function() return _G["MultiBarBottomLeft"] end,
     bar3 = function() return _G["MultiBarBottomRight"] end,
     bar4 = function() return _G["MultiBarRight"] end,
@@ -1168,20 +1188,20 @@ local function UpdateCDMAnchorProxies()
     GetCDMAnchorProxy("cdmUtility")
 end
 
--- Resolve an anchor parent key to a frame
-local function ResolveParentFrame(parentKey)
-    if not parentKey or parentKey == "screen" or parentKey == "disabled" then
-        return UIParent
-    end
-    -- For CDM viewers, use combat-safe proxy frames so width constraints (like
-    -- HUD minimum width) remain stable even while Blizzard's protected frame
-    -- resizes during combat.
-    local cdmProxy = GetCDMAnchorProxy(parentKey)
-    if cdmProxy then
-        return cdmProxy
-    end
-    -- Try frame resolvers first
-    local resolver = FRAME_RESOLVERS[parentKey]
+-- Fallback anchor targets for when a resolved frame is unavailable (nil or hidden).
+-- e.g. classes without a secondary resource should fall back to the primary bar.
+local FRAME_ANCHOR_FALLBACKS = {
+    secondaryPower = "primaryPower",
+}
+
+-- Helper: resolve a single key to a visible frame (nil if unavailable)
+local function ResolveFrameForKey(key)
+    -- CDM proxy check
+    local cdmProxy = GetCDMAnchorProxy(key)
+    if cdmProxy then return cdmProxy end
+
+    -- Frame resolver
+    local resolver = FRAME_RESOLVERS[key]
     if resolver then
         local frame = resolver()
         -- Boss frames resolver returns an array, take the first
@@ -1190,10 +1210,48 @@ local function ResolveParentFrame(parentKey)
         end
         if frame then return frame end
     end
-    -- Try anchor target registry
-    if QUI_Anchoring.anchorTargets[parentKey] then
-        return QUI_Anchoring.anchorTargets[parentKey].frame
+
+    -- Anchor target registry
+    local registered = QUI_Anchoring.anchorTargets[key]
+    if registered then return registered.frame end
+
+    return nil
+end
+
+-- Resolve an anchor parent key to a frame.
+-- Follows the FRAME_ANCHOR_FALLBACKS chain when the resolved frame is nil or
+-- hidden (e.g. secondary resource bar on a class with no secondary resource
+-- falls back to the primary resource bar).
+local function ResolveParentFrame(parentKey)
+    if not parentKey or parentKey == "screen" or parentKey == "disabled" then
+        return UIParent
     end
+
+    local key = parentKey
+    local visited = {}  -- guard against circular fallback chains
+
+    while key do
+        if visited[key] then break end
+        visited[key] = true
+
+        local frame = ResolveFrameForKey(key)
+
+        -- Frame exists and is shown (or at least alpha-shown) → use it
+        if frame and frame.IsShown and frame:IsShown() then
+            return frame
+        end
+
+        -- Frame exists but is hidden → try fallback
+        local fallback = FRAME_ANCHOR_FALLBACKS[key]
+        if fallback then
+            key = fallback
+        else
+            -- No fallback defined; return the frame if it exists (even if hidden)
+            -- so that anchored frames keep their reference, or UIParent as last resort
+            return frame or UIParent
+        end
+    end
+
     return UIParent
 end
 
