@@ -3031,9 +3031,9 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
                 break
             end
         end
-        if not found and currentVal ~= nil and currentVal ~= "" then
-            -- Value not in current list but was previously set - keep it
-            -- (anchor target may not be registered yet)
+        if not found and container.preserveUnknownValue and currentVal ~= nil and currentVal ~= "" then
+            -- Value not in current list but was previously set — keep it visible
+            -- (e.g. anchor target may not be registered yet)
             dropdown.selected:SetText(tostring(currentVal))
         elseif not found then
             dropdown.selected:SetText("")
